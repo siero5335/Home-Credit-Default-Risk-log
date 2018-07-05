@@ -1,0 +1,88 @@
+---
+title: "bureau_connect"
+author: '@siero5335'
+date: "2018/5/18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse, skimr, GGally, plotly, viridis, caret, DT, data.table, lightgbm, magrittr)
+options(scipen=5)
+```
+
+## Data loading
+```{r}
+bureau <-fread('bureau.csv', stringsAsFactors = FALSE, showProgress=F,
+               data.table = F, na.strings=c("NA","NaN","?", ""))
+
+bureau_balance <-fread('bureau_balance.csv', stringsAsFactors = FALSE, showProgress=F,
+                       data.table = F, na.strings=c("NA","NaN","?", ""))
+```
+
+## Data status
+```{r}
+str(bureau)
+```
+このへんはデータ容量の問題もあるし先にこっちで特徴量作るほうが良いかもしれん。
+
+```{r}
+bureau <- bureau %>% 
+  mutate_if(is.character, funs(factor(.) %>% as.integer())) 
+
+avg_bureau <- bureau %>% 
+  group_by(SK_ID_CURR) %>% 
+  summarise_all(funs(mean(., na.rm = TRUE))) %>% 
+  mutate(buro_count = bureau %>%  
+           group_by(SK_ID_CURR) %>% 
+           count() %$% n)
+```
+
+```{r}
+str(bureau_balance)
+```
+status, months_balanceの結合？
+
+
+
+## Join data
+```{r}
+bureau_join <- dplyr::left_join(avg_bureau, bureau_balance, by="SK_ID_BUREAU")
+rm(bureau, bureau_balance)
+gc()
+#fwrite(bureau_join, "bureau_join.csv")
+```
+
+```{r}
+str(bureau_join)
+```
+
+
+```{r}
+bureau_ex <-fread('bureau_join.csv', stringsAsFactors = FALSE, showProgress=F,
+               data.table = F, na.strings=c("NA","NaN","?", ""))
+
+```
+
+
+```{r}
+avg_bureau <- bureau_ex %>% 
+  group_by(SK_ID_CURR) %>% 
+  summarise_all(funs(mean(., na.rm = TRUE))) %>% 
+  mutate(buro_count = bureau_ex %>%  
+           group_by(SK_ID_CURR) %>% 
+           count() %$% n)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+

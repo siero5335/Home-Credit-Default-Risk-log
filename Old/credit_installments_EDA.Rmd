@@ -1,0 +1,212 @@
+---
+title: "credit_installments_EDA"
+author: '@siero5335'
+date: "2018/5/18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse, skimr, GGally, plotly, viridis, DT, data.table)
+options(scipen=5)
+```
+
+## Data loading
+```{r}
+credit <-fread('credit_card_balance.csv', stringsAsFactors = FALSE, showProgress=F,
+                       data.table = F, na.strings=c("NA","NaN","?", ""))
+
+installments <-fread('installments_payments.csv', stringsAsFactors = FALSE, showProgress=F, data.table = F, na.strings=c("NA","NaN","?", ""))
+```
+
+## Data status
+```{r}
+str(credit)
+```
+
+```{r}
+str(installments)
+```
+
+```{r}
+p <- ggplot(installments, aes(x=AMT_INSTALMENT, y=AMT_PAYMENT))
+p + geom_point(aes(colour=factor(NUM_INSTALMENT_VERSION)))
+```
+NUM_INSTALMENT_VERSIONは0~10で殆どを絞めてる45~は一桁台
+
+一対一で出てくる。
+ずれてる人は何か変なことが起こってる。
+差分を特徴量で取ると良さそう。
+
+```{r}
+p <- ggplot(installments, aes(x=AMT_INSTALMENT, y=DAYS_ENTRY_PAYMENT))
+p + geom_point()
+```
+これはあんまりきれいな関係見えないな…
+
+```{r}
+p <- ggplot(installments, aes(x=AMT_INSTALMENT, y=DAYS_INSTALMENT))
+p + geom_point()
+```
+なんとなく関係ありそう
+
+```{r}
+p <- ggplot(installments, aes(x=AMT_PAYMENT, y=DAYS_INSTALMENT))
+p + geom_point()
+```
+
+上とほとんど変わらないのか
+
+
+```{r}
+p <- ggplot(installments, aes(x=DAYS_INSTALMENT, y=DAYS_ENTRY_PAYMENT))
+p + geom_point()
+```
+
+これもだいたいそう。多分請求日と支払日。
+ずれてる人は何か変なことが起こってる。
+差分を特徴量で取ると良さそう。
+
+#diff_data
+```{r}
+installments$dif_days_ins_pay <- installments$DAYS_INSTALMENT - installments$DAYS_ENTRY_PAYMENT
+installments$dif_AMT_ins_pay <- installments$AMT_INSTALMENT - installments$AMT_PAYMENT
+```
+
+
+```{r}
+p <- ggplot(installments, aes(x=dif_days_ins_pay, y=dif_AMT_ins_pay))
+p + geom_point()
+```
+なんだこれ。。。
+線上からはずれてるやつはそこそこ気になる。
+
+```{r}
+installments$DAYS_INSTALMENT <- NULL
+installments$DAYS_ENTRY_PAYMENT <- NULL
+installments$AMT_INSTALMENT <- NULL
+installments$AMT_PAYMENT <- NULL
+
+rm(p)
+gc()
+gc()
+```
+
+```{r}
+ins <- installments %>%
+         group_by(SK_ID_PREV, SK_ID_CURR)  %>%
+         summarise(
+                  n = n(),
+                  sum_ver = sum(NUM_INSTALMENT_VERSION),
+                  sum_num = sum(NUM_INSTALMENT_NUMBER),
+                  mean_dif_days = mean(dif_days_ins_pay),
+                  sd_dif_days = sd(dif_days_ins_pay),
+                  mean_dif_AMT = mean(dif_AMT_ins_pay),
+                  sd_dif_AMT = sd(dif_AMT_ins_pay)
+                  )
+
+rm(installments)
+gc()
+gc()
+```
+
+
+
+## Join data
+```{r}
+inst_credit <- dplyr::left_join(credit, ins, by=c("SK_ID_PREV", "SK_ID_CURR"))
+rm(ins, credit)
+gc()
+#fwrite(inst_credit, "inst_credit.csv")
+```
+
+
+## Data loading2_pos_cash
+```{r}
+Pos_cash <-fread('POS_CASH_balance.csv', stringsAsFactors = FALSE, showProgress=F,
+                     data.table = F, na.strings=c("NA","NaN","?", ""))
+```
+
+```{r}
+summary(factor(Pos_cash$MONTHS_BALANCE))
+```
+
+```{r}
+summary(factor(Pos_cash$CNT_INSTALMENT))
+```
+
+```{r}
+summary(factor(Pos_cash$CNT_INSTALMENT_FUTURE))
+```
+
+```{r}
+summary(factor(Pos_cash$NAME_CONTRACT_STATUS))
+```
+
+```{r}
+summary(factor(Pos_cash$SK_DPD))
+```
+
+```{r}
+summary(factor(Pos_cash$SK_DPD_DEF))
+```
+
+
+```{r}
+POS <- Pos_cash %>%
+         group_by(SK_ID_PREV, SK_ID_CURR)  %>%
+         summarise(
+                  n_DPD = sum(SK_DPD),
+                  n_DPD_DEF = sum(SK_DPD_DEF),
+                  mean_CNT = mean(CNT_INSTALMENT),
+                  sd_CNT = sd(CNT_INSTALMENT),
+                  mean_CNT_FUTURE = mean(CNT_INSTALMENT_FUTURE), 
+                  sd_CNT_FUTURE = sd(CNT_INSTALMENT_FUTURE), 
+                  mean_montns = mean(MONTHS_BALANCE),
+                  sd_montns = sd(MONTHS_BALANCE)
+                  )
+
+POS2 <- Pos_cash %>%
+         group_by(SK_ID_PREV, SK_ID_CURR, NAME_CONTRACT_STATUS)  %>%
+         summarise(total.count=n())
+
+gc()
+gc()
+```
+
+```{r}
+POS2_2 <- POS2 %>%
+  tidyr::spread(NAME_CONTRACT_STATUS, total.count, fill = 0)
+```
+
+
+```{r}
+POS3 <- left_join(POS, POS2_2)
+rm(Pos_cash, POS, POS2, POS2_2)
+gc()
+gc()
+```
+
+
+
+```{r}
+inst_credit <-fread('inst_credit.csv', stringsAsFactors = FALSE, showProgress=F,
+                       data.table = F, na.strings=c("NA","NaN","?", ""))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

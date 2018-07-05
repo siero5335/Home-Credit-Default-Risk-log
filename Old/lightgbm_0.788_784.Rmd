@@ -1,0 +1,160 @@
+---
+title: "Untitled"
+author: "Eguchi"
+date: "2018/7/4"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, message=FALSE)
+```
+
+## package loading
+```{r setup, include=FALSE}
+library(tidyverse); library(lightgbm); library(magrittr); library(moments);  library(zoo);
+library(sessioninfo); library(IROmiss); library(caret); library(irlba); library(DT);
+library(catboost); library(data.table); library(stringr); library(fastknn); library(tictoc);
+library(viridis); library(skimr); library(GGally); library(plotly); library(xgboost); library(missRanger)
+```
+
+
+## import merged data
+```{r, echo=FALSE, include=FALSE}
+tr_te <- read_csv("tr_te_base.csv")
+```
+
+## remove nearZero
+```{r, include=FALSE}
+nzv_cols <- nearZeroVar(tr_te)
+tr_te <- tr_te[, -nzv_cols]
+
+gc(); gc()
+```
+
+## knn feature
+```{r}
+tr <- read_csv("application_train.csv") 
+te <- read_csv("application_test.csv")
+
+tri <- 1:nrow(tr)
+y <- tr$TARGET
+
+set.seed(42)
+tri2 <- caret::createDataPartition(y, p = 0.85, list = F) %>% c()
+
+knn_data <- tr_te[tri, ]
+knntrain <-  na.aggregate(knn_data[tri2, ])
+knnval <-  na.aggregate(knn_data[-tri2, ])
+knntest <- na.aggregate(tr_te[-tri, ])
+
+rm(knn_data); gc(); gc()
+```
+
+# OHE feature
+```{r, include=FALSE}
+docs <- str_subset(names(tr), "FLAG_DOC")
+live <- str_subset(names(tr), "(?!NFLAG_)(?!FLAG_DOC)(?!_FLAG_)FLAG_")
+
+tri <- 1:nrow(tr)
+y <- tr$TARGET
+
+tr_te3 <- tr %>% 
+  select(-TARGET) %>% 
+  bind_rows(te) %>%
+  select(-SK_ID_CURR) %>% 
+  mutate_if(is.character, as.factor)
+
+fac_trte <- data.frame(tr_te3[, docs], tr_te3[, live]) %>%
+  mutate_if(is.integer, as.factor)
+rm(tr, te, tr_te3); gc(); gc()
+
+set.seed(42)
+tri2 <- caret::createDataPartition(y, p = 0.85, list = F) %>% c()
+
+fac_data <- fac_trte[tri, ]
+fac_train <-  fac_data[tri2, ]
+fac_val <-  fac_data[-tri2, ]
+fac_test <- fac_trte[-tri, ]
+
+dummies1 = dummyVars(~., data = fac_train)
+dummies2 = dummyVars(~., data = fac_val)
+dummies3 = dummyVars(~., data = fac_test)
+
+fac_train <- as.data.frame(predict(dummies1, newdata = fac_train))
+fac_val <- as.data.frame(predict(dummies2, newdata = fac_val))
+fac_test <- as.data.frame(predict(dummies3, newdata = fac_test))
+```
+
+## train test val
+```{r, include=FALSE}
+set.seed(71)
+dtest <- tr_te[-tri, ]
+work <-tr_te[tri, ]
+
+dtest <- data.frame(dtest, fac_test)
+
+work[which(work == -Inf, TRUE)] <- NA
+work[which(work == -NaN, TRUE)] <- NA
+
+dtrain <- data.frame(work[tri2, ], fac_train)
+dval <- data.frame(work[-tri2, ], fac_val)
+rm(fac_train, fac_val, fac_test); gc(); gc()
+
+
+```
+
+
+## LGBM param
+```{r}
+lgb.train = lgb.Dataset(data.matrix(dtrain), label = y[tri2])
+lgb.valid = lgb.Dataset(data.matrix(dval), label = y[-tri2])
+
+set.seed(71)
+params = list(objective = "binary", 
+              metric = "auc", 
+              learning_rate= 0.02, 
+              num_leaves= 128,
+              max_bin= 255, # RAM dependent as per LightGBM documentation
+              subsample= 0.85,
+              subsample_freq= 1,
+              colsample_bytree= 0.7,
+              reg_alpha=0.04,
+              reg_lambda=0.075,
+              min_split_gain=0.02,
+              min_child_weight= 30,
+              scale_pos_weight=11) # calculated for this dataset
+```  
+
+## Train LGBM
+```{r}
+set.seed(71)
+lgb.model <- lgb.train(
+      params = params
+      , data = lgb.train
+      , valids = list(val = lgb.valid)
+      , nrounds = 10000
+      , early_stopping_rounds = 200
+      , eval_freq = 50
+    )
+```
+
+## Varimp
+```{r}
+lgb.importance(lgb.model, percentage = TRUE) %>% head(20) %>% kable()
+tree_imp <- lgb.importance(lgb.model, percentage = TRUE) %>% head(20)
+lgb.plot.importance(tree_imp, measure = "Gain")
+```
+
+## submit
+```{r, include=FALSE}
+sample_submission <- read_csv("sample_submission.csv")
+sample_submission %>%
+    mutate(SK_ID_CURR = as.integer(SK_ID_CURR),
+    TARGET = predict(lgb.model, data = data.matrix(dtest), n = lgb.model$best_iter)) %>%
+    write_csv("lightgbm_788_OHE.csv")
+```
+
+
+
+
+
