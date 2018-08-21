@@ -1,0 +1,324 @@
+---
+title: "Untitled"
+author: "Eguchi"
+date: "2018/7/1"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, message=FALSE)
+```
+
+## package loading
+```{r setup, include=FALSE}
+library(tidyverse); library(lightgbm); library(magrittr); library(moments); library(missRanger); library(zoo); library(factoextra)
+library(keras); library(sessioninfo); library(IROmiss); library(xgboost); library(caret); library(irlba); 
+library(catboost); library(data.table); library(stringr); library(fastknn)
+```
+
+```{r}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse, skimr, GGally, plotly, viridis, 
+               caret, DT, data.table, lightgbm, xgboost, magrittr, tictoc)
+```
+
+```{r}
+use_backend(backend = "plaidml")
+```
+
+## sum_bbalance
+```{r, echo=FALSE, include=FALSE}
+bbalance <- read_csv("bureau_balance.csv") 
+```
+
+```{r}
+fn <- funs(median, sd, min, max, sum, n_distinct, .args = list(na.rm = TRUE))
+```
+
+```{r}
+sum_bbalance <- bbalance %>%
+  mutate_if(is.character, funs(factor(.) %>% as.integer)) %>% 
+  group_by(SK_ID_BUREAU) %>% 
+  summarise_all(fn) 
+rm(bbalance); gc()
+```
+
+
+## sum_bureau
+```{r, include=FALSE}
+bureau <- read_csv("bureau.csv")
+```
+
+```{r, include=FALSE}
+sum_bureau <- 
+bureau %>% 
+  left_join(sum_bbalance, by = "SK_ID_BUREAU") %>% 
+  select(-SK_ID_BUREAU) %>% 
+  mutate_if(is.character, funs(factor(.) %>% as.integer)) %>% 
+  group_by(SK_ID_CURR) %>% 
+  summarise_all(fn)
+rm(bureau, sum_bbalance); gc()
+```
+
+## sum_cc_balance
+```{r, include=FALSE}
+cc_balance <- read_csv("credit_card_balance.csv")
+```
+
+```{r, include=FALSE}
+sum_cc_balance <- cc_balance %>% 
+  select(-SK_ID_PREV) %>% 
+  mutate_if(is.character, funs(factor(.) %>% as.integer)) %>% 
+  group_by(SK_ID_CURR) %>% 
+  summarise_all(fn)
+rm(cc_balance); gc()
+```
+
+## payments
+```{r, include=FALSE}
+payments <- read_csv("installments_payments.csv") 
+```
+
+```{r, include=FALSE}
+sum_payments <- payments %>% 
+  select(-SK_ID_PREV) %>% 
+  mutate(PAYMENT_PERC = AMT_PAYMENT / AMT_INSTALMENT,
+         PAYMENT_DIFF = AMT_INSTALMENT - AMT_PAYMENT,
+         DPD = DAYS_ENTRY_PAYMENT - DAYS_INSTALMENT,
+         DBD = DAYS_INSTALMENT - DAYS_ENTRY_PAYMENT,
+         DPD = ifelse(DPD > 0, DPD, 0),
+         DBD = ifelse(DBD > 0, DBD, 0)) %>% 
+  group_by(SK_ID_CURR) %>% 
+  summarise_all(fn) 
+rm(payments); gc()
+```
+
+## payments
+```{r, include=FALSE}
+pc_balance <- read_csv("POS_CASH_balance.csv")
+```
+
+```{r, include=FALSE}
+sum_pc_balance <- pc_balance %>% 
+  select(-SK_ID_PREV) %>% 
+  mutate_if(is.character, funs(factor(.) %>% as.integer)) %>% 
+  group_by(SK_ID_CURR) %>% 
+  summarise_all(fn)
+rm(pc_balance); gc()
+```
+
+## prev
+```{r, include=FALSE}
+prev <- read_csv("previous_application.csv")
+```
+
+```{r, include=FALSE}
+sum_prev <- prev %>%
+  select(-SK_ID_PREV) %>% 
+  mutate_if(is.character, funs(factor(.) %>% as.integer)) %>% 
+  mutate(DAYS_FIRST_DRAWING = ifelse(DAYS_FIRST_DRAWING == 365243, NA, DAYS_FIRST_DRAWING),
+         DAYS_FIRST_DUE = ifelse(DAYS_FIRST_DUE == 365243, NA, DAYS_FIRST_DUE),
+         DAYS_LAST_DUE_1ST_VERSION = ifelse(DAYS_LAST_DUE_1ST_VERSION == 365243, NA, DAYS_LAST_DUE_1ST_VERSION),
+         DAYS_LAST_DUE = ifelse(DAYS_LAST_DUE == 365243, NA, DAYS_LAST_DUE),
+         DAYS_TERMINATION = ifelse(DAYS_TERMINATION == 365243, NA, DAYS_TERMINATION),
+         APP_CREDIT_PERC = AMT_APPLICATION / AMT_CREDIT) %>% 
+  group_by(SK_ID_CURR) %>% 
+  summarise_all(fn) 
+rm(prev); gc()
+```
+
+## train_test
+```{r, include=FALSE}
+tr <- read_csv("application_train.csv") 
+te <- read_csv("application_test.csv")
+```
+
+
+```{r, include=FALSE}
+tri <- 1:nrow(tr)
+y <- tr$TARGET
+
+tr_te <- tr %>% 
+  select(-TARGET) %>% 
+  bind_rows(te) %>%
+  left_join(sum_bureau, by = "SK_ID_CURR") %>% 
+  left_join(sum_cc_balance, by = "SK_ID_CURR") %>% 
+  left_join(sum_payments, by = "SK_ID_CURR") %>% 
+  left_join(sum_pc_balance, by = "SK_ID_CURR") %>% 
+  left_join(sum_prev, by = "SK_ID_CURR") %>% 
+  select(-SK_ID_CURR) %>% 
+  mutate_if(is.character, funs(factor(.) %>% as.integer)) %>% 
+  mutate(na = apply(., 1, function(x) sum(is.na(x))),
+         DAYS_EMPLOYED = ifelse(DAYS_EMPLOYED == 365243, NA, DAYS_EMPLOYED),
+         DAYS_EMPLOYED_PERC = sqrt(DAYS_EMPLOYED / DAYS_BIRTH),
+         INCOME_CREDIT_PERC = AMT_INCOME_TOTAL / AMT_CREDIT,
+         INCOME_PER_PERSON = log1p(AMT_INCOME_TOTAL / CNT_FAM_MEMBERS),
+         ANNUITY_INCOME_PERC = sqrt(AMT_ANNUITY / (1 + AMT_INCOME_TOTAL)),
+         LOAN_INCOME_RATIO = AMT_CREDIT / AMT_INCOME_TOTAL,
+         ANNUITY_LENGTH = AMT_CREDIT / AMT_ANNUITY,
+         CHILDREN_RATIO = CNT_CHILDREN / CNT_FAM_MEMBERS, 
+         CREDIT_TO_GOODS_RATIO = AMT_CREDIT / AMT_GOODS_PRICE,
+         INC_PER_CHLD = AMT_INCOME_TOTAL / (1 + CNT_CHILDREN),
+         SOURCES_PROD = EXT_SOURCE_1 * EXT_SOURCE_2 * EXT_SOURCE_3,
+         CAR_TO_BIRTH_RATIO = OWN_CAR_AGE / DAYS_BIRTH,
+         CAR_TO_EMPLOY_RATIO = OWN_CAR_AGE / DAYS_EMPLOYED,
+         PHONE_TO_BIRTH_RATIO = DAYS_LAST_PHONE_CHANGE / DAYS_BIRTH,
+         PHONE_TO_BIRTH_RATIO = DAYS_LAST_PHONE_CHANGE / DAYS_EMPLOYED) 
+
+docs <- str_subset(names(tr), "FLAG_DOC")
+live <- str_subset(names(tr), "(?!NFLAG_)(?!FLAG_DOC)(?!_FLAG_)FLAG_")
+inc_by_org <- tr_te %>% 
+  group_by(ORGANIZATION_TYPE) %>% 
+  summarise(m = median(AMT_INCOME_TOTAL)) %$% 
+  setNames(as.list(m), ORGANIZATION_TYPE)
+
+rm(tr, te, fn, sum_bureau, sum_cc_balance, 
+   sum_payments, sum_pc_balance, sum_prev); gc()
+```
+
+```{r, include=FALSE}
+tr_te %<>% 
+  mutate(DOC_IND_KURT = apply(tr_te[, docs], 1, moments::kurtosis),
+         LIVE_IND_SUM = apply(tr_te[, live], 1, sum),
+         NEW_INC_BY_ORG = recode(tr_te$ORGANIZATION_TYPE, !!!inc_by_org),
+         NEW_EXT_SOURCES_MEAN = apply(tr_te[, c("EXT_SOURCE_1", "EXT_SOURCE_2", "EXT_SOURCE_3")], 1, mean),
+         NEW_SCORES_STD = apply(tr_te[, c("EXT_SOURCE_1", "EXT_SOURCE_2", "EXT_SOURCE_3")], 1, sd))%>%
+  mutate_all(funs(ifelse(is.nan(.), NA, .))) %>% 
+  mutate_all(funs(ifelse(is.infinite(.), NA, .)))
+```
+
+```{r, include=FALSE}
+tr_te_PCA <- na.aggregate(tr_te)
+```
+
+```{r, include=FALSE}
+nzv_cols <- nearZeroVar(tr_te_PCA)
+tr_te_PCA <- tr_te_PCA[, -nzv_cols]
+```
+
+```{r, include=FALSE}
+regexp <- "[[:digit:]]+"
+pcaObject <- prcomp(tr_te_PCA,  scale = TRUE, center = TRUE)
+```
+
+```{r}
+set.seed(42)
+tri2 <- caret::createDataPartition(y, p = 0.8, list = F) %>% c()
+
+knn_data <- tr_te_PCA[tri, ]
+knntrain <-  knn_data[tri2, ]
+knnval <-  knn_data[-tri2, ]
+```
+
+```{r, include=FALSE}
+set.seed(123)
+new.data1 <- knnExtract(xtr = as.matrix(knntrain), ytr = as.factor(y[tri2]), xte = as.matrix(knnval), k = 100)
+new.data2 <- knnExtract(xtr = as.matrix(knntrain), ytr = as.factor(y[tri2]), xte = as.matrix(tr_te_PCA[-tri, ]), k = 100)
+```
+
+```{r, include=FALSE}
+df_corr = cor(na.omit(tr_te_PCA))
+hc = findCorrelation(df_corr, cutoff=0.8)
+hc = sort(hc)
+dt1_num3 = as.data.frame(tr_te_PCA)[,-c(hc)]
+
+rm_col_hc <- setdiff(colnames(tr_te_PCA), colnames(dt1_num3))
+```
+
+
+```{r, include=FALSE}
+tr_te <- data.frame(tr_te, pcaObject$x[,  1:30])
+
+tr_te2 <- as.data.frame(tr_te)[, !(colnames(tr_te) %in% rm_col_hc)]
+```
+
+```{r, include=FALSE}
+rm(tr_te_PCA, pcaObject, knn_data, knntrain, knnval); gc(); gc()
+```
+
+
+```{r, include=FALSE}
+set.seed(71)
+dtest <- tr_te2[-tri, ]
+work <-tr_te2[tri, ]
+
+dtest <- data.frame(dtest, new.data2$new.te)
+```
+
+```{r}
+work[which(work == -Inf, TRUE)] <- NA
+work[which(work == -NaN, TRUE)] <- NA
+
+dtrain <- data.frame(work[tri2, ], new.data1$new.tr)
+dval <- data.frame(work[-tri2, ], new.data1$new.te)
+```
+
+
+```{r}
+lgb.train = lgb.Dataset(data.matrix(dtrain), label = y[tri2])
+lgb.valid = lgb.Dataset(data.matrix(dval), label = y[-tri2])
+```
+
+```{r}
+categoricals.vec = colnames(dtrain )[c(grep("cat",colnames(dtrain)))]
+```
+
+```{r}
+set.seed(71)
+params.lgb = list(
+    objective = "binary"
+    , booster = "gbtree"
+    , metric = "auc"
+    , min_data_in_leaf = 1
+    , min_sum_hessian_in_leaf = 100
+    , feature_fraction = 0.9
+    , bagging_fraction = 0.9
+    , bagging_freq = 0
+    , nthread = 4 
+    , eta = 0.05
+    , max_depth = 6,
+    min_child_weight = 22,
+    colsample_bytree = 0.7,
+    colsample_bylevel = 0.7
+  )
+  
+
+lgb.model <- lgb.train(
+      params = params.lgb
+      , data = lgb.train
+      , valids = list(val = lgb.valid)
+      , learning_rate = 0.05
+      , num_leaves = 7
+      , num_threads = 2
+      , nrounds = 3000 #IF YOU CHECK A DEBUG ?! nrounds = 100 else 3000  
+      , early_stopping_rounds = 200
+      , eval_freq = 50
+      , categorical_feature = categoricals.vec
+    )
+```
+
+```{r}
+lgb.importance(lgb.model, percentage = TRUE) %>% head(20) %>% kable()
+tree_imp <- lgb.importance(lgb.model, percentage = TRUE) %>% head(20)
+lgb.plot.importance(tree_imp, measure = "Gain")
+```
+
+```{r}
+test <-  catboost.load_pool(dtest)
+```
+
+```{r, include=FALSE}
+sample_submission <- read_csv("sample_submission.csv")
+```
+  
+```{r, include=FALSE} 
+sample_submission %>%
+    mutate(SK_ID_CURR = as.integer(SK_ID_CURR),
+    TARGET = predict(lgb.model, data = data.matrix(dtest), n = lgb.model$best_iter)) %>%
+    write_csv("lightgbm_0.790.csv")
+```
+
+
+
+
+
