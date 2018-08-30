@@ -1,9 +1,10 @@
 # Forked from https://www.kaggle.com/kailex/tidy-xgb-all-tables-0-796
 # Changed to LGBM model
 # Changed to one-hot encoding
+# https://www.kaggle.com/returnofsputnik/good-transformations-to-continuous-variables
 
 pacman::p_load(tidyverse, irlba, lightgbm, magrittr, tictoc, fastknn, stringr, zoo, caret, moments,
-               DT, data.table, viridis, skimr, GGally, naniar, softImpute, onehot)
+               DT, data.table, viridis, skimr, GGally, onehot)
 
 set.seed(0)
 
@@ -13,7 +14,7 @@ cat("Loading data...\n")
 
 bbalance <- read_csv("bureau_balance.csv") 
 bureau <- read_csv("bureau.csv")
-cc_balance <- read_csv("credit_card_balance.csv")
+cc_balance <- read_csv("CCB.csv")
 payments <- read_csv("installments_payments.csv") 
 pc_balance <- read_csv("POS_CASH_balance.csv")
 prev <- read_csv("previous_application.csv")
@@ -36,6 +37,64 @@ bureau$DAYS_ENDDATE_FACT[bureau$DAYS_ENDDATE_FACT < -40000] <- NA
 cc_balance$AMT_DRAWINGS_ATM_CURRENT[cc_balance$AMT_DRAWINGS_ATM_CURRENT < 0] <- NA
 cc_balance$AMT_DRAWINGS_CURRENT[cc_balance$AMT_DRAWINGS_ATM_CURRENT < 0] <- NA
 
+#tr$AMT_INCOME_TOTAL <- log1p(tr$AMT_INCOME_TOTAL)
+#tr$AMT_CREDIT <- log1p(tr$AMT_CREDIT)
+#tr$AMT_ANNUITY <- log1p(tr$AMT_ANNUITY)
+#tr$AMT_GOODS_PRICE <- log1p(tr$AMT_GOODS_PRICE)
+tr$REGION_POPULATION_RELATIVE <- sqrt(tr$REGION_POPULATION_RELATIVE)
+#tr$DAYS_BIRTH <- sqrt(abs(tr$DAYS_BIRTH))
+#tr$DAYS_EMPLOYED <- sqrt(abs(tr$DAYS_EMPLOYED))
+tr$DAYS_REGISTRATION <- sqrt(abs(tr$DAYS_REGISTRATION))
+#tr$OWN_CAR_AGE <- sqrt(abs(tr$OWN_CAR_AGE))
+tr$APARTMENTS_AVG <- log1p(50*tr$APARTMENTS_AVG)
+tr$YEARS_BEGINEXPLUATATION_AVG <- (tr$YEARS_BEGINEXPLUATATION_AVG)^30
+tr$YEARS_BUILD_AVG <- (tr$YEARS_BUILD_AVG)^3
+tr$COMMONAREA_AVG <- (tr$COMMONAREA_AVG)^(-1/200)
+tr$ELEVATORS_AVG <- (tr$ELEVATORS_AVG)^(1/40)
+tr$ENTRANCES_AVG <- (tr$ENTRANCES_AVG)^(1/3)
+tr$FLOORSMAX_AVG <- (tr$FLOORSMAX_AVG)^(1/2.5)
+tr$FLOORSMIN_AVG <- (tr$FLOORSMIN_AVG)^(1/2.2)
+tr$LANDAREA_VG <- (tr$LANDAREA_AVG)^(1/5)
+tr$LIVINGAPRTMENTS_AVG <- (tr$LIVINGAPARTMENTS_AVG)^(1/3)
+tr$LIVINGAREA_AVG <- (tr$LIVINGAREA_AVG)^(1/3.5)
+tr$NONLIVINGAPARTMENTS_AVG <- (tr$NONLIVINGAPARTMENTS_AVG)^(1/7)
+tr$NONLIVINGAREA_AVG <- (tr$NONLIVINGAREA_AVG)^(1/5)
+tr$TOTALAREA_MODE <- (tr$TOTALAREA_MODE)^(1/3)
+tr$OBS_30_CNT_SOCIAL_CIRCLE <- (tr$OBS_30_CNT_SOCIAL_CIRCLE)^(1/7)
+tr$DEF_30_CNT_SOCIAL_CIRCLE <- (tr$DEF_30_CNT_SOCIAL_CIRCLE)^(1/7)
+tr$OBS_60_CNT_SOCIAL_CIRCLE <- (tr$OBS_60_CNT_SOCIAL_CIRCLE)^(1/7)
+tr$DEF_60_CNT_SOCIAL_CIRCLE <- (tr$DEF_60_CNT_SOCIAL_CIRCLE)^(1/7)
+#tr$DAYS_LAST_PHONE_CHANGE <- (abs(tr$DAYS_LAST_PHONE_CHANGE))^(1/2)
+
+#te$AMT_INCOME_TOTAL <- log1p(te$AMT_INCOME_TOTAL)
+#te$AMT_CREDIT <- log1p(te$AMT_CREDIT)
+#te$AMT_ANNUITY <- log1p(te$AMT_ANNUITY)
+#te$AMT_GOODS_PRICE <- log1p(te$AMT_GOODS_PRICE)
+te$REGION_POPULATION_RELATIVE <- sqrt(te$REGION_POPULATION_RELATIVE)
+#te$DAYS_BIRTH <- sqrt(abs(te$DAYS_BIRTH))
+#te$DAYS_EMPLOYED <- sqrt(abs(te$DAYS_EMPLOYED))
+te$DAYS_REGISTRATION <- sqrt(abs(te$DAYS_REGISTRATION))
+#te$OWN_CAR_AGE <- sqrt(abs(te$OWN_CAR_AGE))
+te$APARTMENTS_AVG <- log1p(50*te$APARTMENTS_AVG)
+te$YEARS_BEGINEXPLUATATION_AVG <- (te$YEARS_BEGINEXPLUATATION_AVG)^30
+te$YEARS_BUILD_AVG <- (te$YEARS_BUILD_AVG)^3
+te$COMMONAREA_AVG <- (te$COMMONAREA_AVG)^(-1/200)
+te$ELEVATORS_AVG <- (te$ELEVATORS_AVG)^(1/40)
+te$ENTRANCES_AVG <- (te$ENTRANCES_AVG)^(1/3)
+te$FLOORSMAX_AVG <- (te$FLOORSMAX_AVG)^(1/2.5)
+te$FLOORSMIN_AVG <- (te$FLOORSMIN_AVG)^(1/2.2)
+te$LANDAREA_VG <- (te$LANDAREA_AVG)^(1/5)
+te$LIVINGAPRTMENTS_AVG <- (te$LIVINGAPARTMENTS_AVG)^(1/3)
+te$LIVINGAREA_AVG <- (te$LIVINGAREA_AVG)^(1/3.5)
+te$NONLIVINGAPARTMENTS_AVG <- (te$NONLIVINGAPARTMENTS_AVG)^(1/7)
+te$NONLIVINGAREA_AVG <- (te$NONLIVINGAREA_AVG)^(1/5)
+te$TOTALAREA_MODE <- (te$TOTALAREA_MODE)^(1/3)
+te$OBS_30_CNT_SOCIAL_CIRCLE <- (te$OBS_30_CNT_SOCIAL_CIRCLE)^(1/7)
+te$DEF_30_CNT_SOCIAL_CIRCLE <- (te$DEF_30_CNT_SOCIAL_CIRCLE)^(1/7)
+te$OBS_60_CNT_SOCIAL_CIRCLE <- (te$OBS_60_CNT_SOCIAL_CIRCLE)^(1/7)
+te$DEF_60_CNT_SOCIAL_CIRCLE <- (te$DEF_60_CNT_SOCIAL_CIRCLE)^(1/7)
+#te$DAYS_LAST_PHONE_CHANGE <- (abs(te$DAYS_LAST_PHONE_CHANGE))^(1/2)
+
 #---------------------------
 cat("Preprocessing...\n")
 
@@ -57,8 +116,50 @@ sum_bbalance <- bbalance %>%
 rm(bbalance); gc()
 
 #---- bureau file
+bureau2 <- read_csv("bureau.csv")
+
 bureau$credit_active_binary <- as.integer(bureau$CREDIT_ACTIVE != 'Closed')
 bureau$credit_enddate_binary <- as.integer(bureau$DAYS_CREDIT_ENDDATE > 40)
+
+bureau2$credit_active_binary <- as.integer(bureau$CREDIT_ACTIVE != 'Closed')
+bureau2$credit_enddate_binary <- as.integer(bureau$DAYS_CREDIT_ENDDATE > 40)
+
+sum_bureau2 <- bureau2 %>% 
+  as.tibble() %>% 
+  select(-c(SK_ID_BUREAU, SK_ID_CURR, CREDIT_ACTIVE, CREDIT_CURRENCY)) %>% 
+  group_by_("CREDIT_TYPE") %>%
+  summarise_all(mean)
+
+colnames(sum_bureau2) <- paste0("TYPE_",colnames(sum_bureau2), sep="")
+
+colnames(sum_bureau2)[1] <- "CREDIT_TYPE"
+
+bureau <- left_join(bureau , sum_bureau2, by= "CREDIT_TYPE")
+
+sum_bureau3 <- bureau2 %>% 
+  as.tibble() %>% 
+  select(-c(SK_ID_BUREAU, SK_ID_CURR, CREDIT_ACTIVE, CREDIT_TYPE)) %>% 
+  group_by_("CREDIT_CURRENCY") %>%
+  summarise_all(mean)
+
+colnames(sum_bureau3) <- paste0("CURRENCY_", colnames(sum_bureau3), sep="")
+
+colnames(sum_bureau3)[1] <- "CREDIT_CURRENCY"
+
+bureau <- left_join(bureau , sum_bureau3, by= "CREDIT_CURRENCY")
+
+
+sum_bureau4 <- bureau2 %>% 
+  as.tibble() %>% 
+  select(-c(SK_ID_BUREAU, SK_ID_CURR, CREDIT_ACTIVE)) %>% 
+  group_by_(.dots=c("CREDIT_CURRENCY", "CREDIT_TYPE")) %>%
+  summarise_all(mean) 
+
+colnames(sum_bureau4) <- paste0("CURRENCY_TYPE_", colnames(sum_bureau4), sep="")
+colnames(sum_bureau4)[1] <- "CREDIT_CURRENCY"
+colnames(sum_bureau4)[2] <- "CREDIT_TYPE"
+
+bureau <- left_join(bureau, sum_bureau4, by= c("CREDIT_CURRENCY", "CREDIT_TYPE"))
 
 encoder<- onehot(bureau, stringsAsFactors=TRUE, addNA=FALSE, max_levels=5)
 bureau<- predict(encoder, bureau)
@@ -67,10 +168,19 @@ sum_bureau <- bureau %>%
   as.tibble() %>%
   left_join(sum_bbalance, by = "SK_ID_BUREAU") %>% 
   select(-SK_ID_BUREAU) %>% 
+  mutate(NEW_AMT_CREDIT_SUM_DEBT_DIVIDE_AMT_CREDIT_SUM = AMT_CREDIT_SUM_DEBT / AMT_CREDIT_SUM,
+         NEW_AMT_CREDIT_SUM_LIMIT_DIVIDE_AMT_CREDIT_SUM = AMT_CREDIT_SUM_LIMIT/ AMT_CREDIT_SUM,
+         NEW_AMT_CREDIT_SUM_OVERDUE_DIVIDE_AMT_CREDIT_SUM = AMT_CREDIT_SUM_OVERDUE / AMT_CREDIT_SUM,
+         NEW_AMT_CREDIT_SUM_DEBT_DIVIDE_AMT_ANNUITY = AMT_CREDIT_SUM_DEBT / AMT_ANNUITY,
+         NEW_AMT_CREDIT_SUM_LIMIT_DIVIDE_AMT_ANNUITY = AMT_CREDIT_SUM_LIMIT / AMT_ANNUITY,
+         NEW_AMT_CREDIT_SUM_OVERDUE_DIVIDE_AMT_ANNUITY = AMT_CREDIT_SUM_OVERDUE / AMT_ANNUITY,
+         NEW_AMT_CREDIT_SUM_OVERDUE_DIVIDE_AMT_CREDIT_SUM_DEBT = AMT_CREDIT_SUM_OVERDUE / AMT_CREDIT_SUM_DEBT,
+         NEW_AMT_CREDIT_MAX_OVERDUE_DIVIDE_AMT_CREDIT_SUM_OVERDUE = AMT_CREDIT_MAX_OVERDUE / AMT_CREDIT_SUM_DEBT) %>% 
   mutate_if(is.character, funs(factor(.) %>% as.integer)) %>% 
   group_by(SK_ID_CURR) %>% # Aggregate by SK_ID_CURR
   summarise_all(fn)
-rm(bureau, sum_bbalance); gc()
+
+rm(bureau, sum_bbalance, bureau2, sum_bureau2, sum_bureau3, sum_bureau4)
 
 
 gc(); gc()
@@ -78,7 +188,8 @@ gc(); gc()
 sum_bureau[which(sum_bureau == -Inf, TRUE)] <- NA
 sum_bureau[which(sum_bureau == -NaN, TRUE)] <- NA
 
-
+nzv_cols <- nearZeroVar(sum_bureau)
+sum_bureau <- sum_bureau[, -nzv_cols];gc(); gc()
 
 #----credit card balance file
 encoder<- onehot(cc_balance, stringsAsFactors=TRUE, addNA=FALSE, max_levels=5)
@@ -93,10 +204,7 @@ sum_cc_balance <- cc_balance %>%
 rm(cc_balance); gc()
 
 #-----payments file
-encoder<- onehot(payments, stringsAsFactors=TRUE, addNA=FALSE, max_levels=5)
-payments<- predict(encoder, payments)
-
-sum_payments <- payments %>% 
+payments2 <- payments %>% 
   as.tibble() %>%
   select(-SK_ID_PREV) %>% 
   mutate(PAYMENT_PERC = AMT_PAYMENT / AMT_INSTALMENT,
@@ -104,10 +212,67 @@ sum_payments <- payments %>%
          DPD = DAYS_ENTRY_PAYMENT - DAYS_INSTALMENT,
          DBD = DAYS_INSTALMENT - DAYS_ENTRY_PAYMENT,
          DPD = ifelse(DPD > 0, DPD, 0),
-         DBD = ifelse(DBD > 0, DBD, 0)) %>% 
+         DBD = ifelse(DBD > 0, DBD, 0))
+
+payments2$DPD_cut <- as.factor(cut(payments2$DPD, 
+                                   breaks = c(-1, 0, 1, 5, 10, 30, 100, 300, 1000, 3000)))
+
+payments2$DBD_cut <- as.factor(cut(payments2$DBD, 
+                                   breaks = c(-1, 0, 1, 5, 10, 30, 100, 300, 3500)))
+
+payments <- payments %>% 
+  as.tibble() %>%
+  select(-SK_ID_PREV) %>% 
+  mutate(PAYMENT_PERC = AMT_PAYMENT / AMT_INSTALMENT,
+         PAYMENT_DIFF = AMT_INSTALMENT - AMT_PAYMENT,
+         DPD = DAYS_ENTRY_PAYMENT - DAYS_INSTALMENT,
+         DBD = DAYS_INSTALMENT - DAYS_ENTRY_PAYMENT,
+         DPD = ifelse(DPD > 0, DPD, 0),
+         DBD = ifelse(DBD > 0, DBD, 0)) 
+
+payments$DPD_cut <- as.factor(cut(payments$DPD, 
+                                  breaks = c(-1, 0, 1, 5, 10, 30, 100, 300, 1000, 3000)))
+
+payments$DBD_cut <- as.factor(cut(payments$DBD, 
+                                  breaks = c(-1, 0, 1, 5, 10, 30, 100, 300, 3500)))
+
+sum_payments2 <- payments2 %>% 
+  select(-DPD_cut) %>% 
+  group_by(DBD_cut) %>% 
+  summarise_all(mean) 
+
+colnames(sum_payments2) <- paste0("DBD_cut_", colnames(sum_payments2), sep="")
+colnames(sum_payments2)[1] <- "DBD_cut"
+
+
+payments <- left_join(payments, sum_payments2, by = "DBD_cut")
+
+sum_payments3 <- payments2 %>% 
+  select(-DBD_cut) %>% 
+  group_by(DPD_cut) %>% 
+  summarise_all(mean) 
+
+colnames(sum_payments3) <- paste0("DPD_cut_", colnames(sum_payments3), sep="")
+colnames(sum_payments3)[1] <- "DPD_cut"
+
+
+payments <- left_join(payments, sum_payments3, by = "DPD_cut")
+
+payments$DBD_cut_SK_ID_CURR <- NULL
+payments$DBD_cut_DPD <- NULL
+payments$DBD_cut_DBD <- NULL
+payments$DPD_cut_SK_ID_CURR <- NULL
+payments$DPD_cut_DPD <- NULL
+payments$DPD_cut_DBD <- NULL
+
+sum_payments <- payments %>% 
+  as.tibble() %>%
+  mutate_if(is.factor, funs(factor(.) %>% as.integer)) %>%
   group_by(SK_ID_CURR) %>% 
   summarise_all(fn) 
-rm(payments); gc()
+
+rm(payments, payments2, sum_payments2, sum_payments3); gc(); gc()
+
 
 #-----pc_balance file
 pc_balance$pos_cash_paid_late <- as.integer(pc_balance$SK_DPD > 0)
@@ -143,10 +308,10 @@ sum_prev <- prev %>%
 
 rm(prev); gc()
 
+nzv_cols <- nearZeroVar(sum_prev)
+sum_prev <- sum_prev[, -nzv_cols];gc(); gc()
+
 #---- Merge files
-
-
-
 tri <- 1:nrow(tr)
 y <- tr$TARGET
 
@@ -206,7 +371,7 @@ tr_te %<>%
          LIVE_IND_SUM = apply(tr_te[, live], 1, sum),
          NEW_INC_BY_ORG = recode(tr_te$ORGANIZATION_TYPE, !!!inc_by_org),
          NEW_EXT_SOURCES_MEAN = apply(tr_te[, c("EXT_SOURCE_1", "EXT_SOURCE_2", "EXT_SOURCE_3")], 1, mean),
-         NEW_SCORES_STD = apply(tr_te[, c("EXT_SOURCE_1", "EXT_SOURCE_2", "EXT_SOURCE_3")], 1, sd))%>%
+         NEW_SCORES_STD = apply(tr_te[, c("EXT_SOURCE_1", "EXT_SOURCE_2", "EXT_SOURCE_3")], 1, sd)) %>%
   mutate_all(funs(ifelse(is.nan(.), NA, .))) %>% 
   mutate_all(funs(ifelse(is.infinite(.), NA, .))) 
 
@@ -299,15 +464,40 @@ tr_te6 <- tr_te %>%
   )
 
 
-tr_te <- left_join(tr_te , tr_te6, by= "OCCUPATION_TYPE")
+tr_te <- left_join(tr_te , tr_te6, by= "OCCUPATION_TYPE") 
 
+tr_te <- tr_te %>% 
+  mutate_if(is.character, funs(factor(.) %>% as.integer)) %>%
+  mutate_all(funs(ifelse(is.nan(.), NA, .))) %>% 
+  mutate_all(funs(ifelse(is.infinite(.), NA, .))) 
+
+nzv_cols <- nearZeroVar(tr_te)
+tr_te <- tr_te[, -nzv_cols];gc(); gc()
 
 rm(tr_te2, tr_te3, tr_te4, tr_te5, tr_te6);gc(); gc()
 
+tr_te <- data.matrix(tr_te)
 
+tr_te7 <- na.aggregate(tr_te)
+tr_te7[is.na(tr_te7)] <- 0
 
-encoder<- onehot(tr_te, stringsAsFactors=TRUE, addNA=FALSE)
-tr_te<- predict(encoder, tr_te)
+df_corr = cor(tr_te7)
+hc = findCorrelation(df_corr, cutoff=0.9)
+hc = sort(hc)
+dt1_num3 = as.data.frame(tr_te7)[,-c(hc)]
+
+rm_col_hc <- setdiff(colnames(tr_te7), colnames(dt1_num3))
+tr_te <- as.data.frame(tr_te)[, !(colnames(tr_te) %in% rm_col_hc)]
+
+pcaObject <- prcomp(tr_te7,  scale = TRUE, center = TRUE)
+tr_te <- data.frame(tr_te, pcaObject$x[,  1:30])
+
+tr_te <- tr_te %>% 
+  mutate_if(is.character, funs(factor(.) %>% as.integer)) %>%
+  mutate_all(funs(ifelse(is.nan(.), NA, .))) %>% 
+  mutate_all(funs(ifelse(is.infinite(.), NA, .))) 
+
+rm(df_corr, dt1_num3, rm_col_hc, tr_te7, pcaObject);gc(); gc()
 
 #---------------------------
 cat("Preparing data...\n")
@@ -317,32 +507,33 @@ tri2 <- caret::createDataPartition(y, p = 0.85, list = F) %>% c()
 
 dtrain <- data.frame(work[tri2, ])
 dval <- data.frame(work[-tri2, ])
-dtest<- data.frame(tr_te[-tri,])
+dtest <- data.frame(tr_te[-tri, ])
 
-rm(work); gc(); gc()
+rm(work, new.data1, new.data2); gc(); gc()
 
 rm(encoder); gc(); gc()
 
-lgb.train = lgb.Dataset(data.matrix(dtrain), label = y[tri2])
-lgb.valid = lgb.Dataset(data.matrix(dval), label = y[-tri2])
-cols<- colnames(tr_te)
+lgb.train <- lgb.Dataset(data.matrix(dtrain), label = y[tri2])
+lgb.valid <- lgb.Dataset(data.matrix(dval), label = y[-tri2])
+cols <- colnames(tr_te)
 rm(tr_te, y, tri, dtrain, dval); gc(); gc()
 
 #------------------------------
 cat("Training LGBM....\n")
 
-lgb.params<- list(objective = "binary",
-                  metric = "auc",
-                  max_depth=8,
-                  num_leaves=34,
-                  num_threads = 4,
-                  min_data_in_leaf = 10,
-                  feature_fraction = 0.95,
-                  bagging_fraction = 0.87,
-                  lambda_l1 = 0.04, 
-                  lambda_l2 = 0.073,
-                  min_gain_to_split = 0.02,
-                  min_child_weight = 39
+lgb.params <- list(objective = "binary",
+                   metric = "auc",
+                   max_depth = 8,
+                   num_leaves = 32,
+                   num_threads = 4,
+                   max_bin = 255,
+                   min_data_in_leaf = 10,
+                   feature_fraction = 0.95,
+                   bagging_fraction = 0.87,
+                   lambda_l1 = 0.04, 
+                   lambda_l2 = 0.075,
+                   min_gain_to_split = 0.02,
+                   min_child_weight = 39
 )
 
 lgb.model <- lgb.train(params = lgb.params,
